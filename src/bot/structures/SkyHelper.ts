@@ -1,14 +1,5 @@
-import {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  Collection,
-  Options,
-  type OAuth2Scopes,
-  type TextChannel,
-  type Webhook,
-  type ApplicationCommand,
-} from "discord.js";
+import { Client, type APIApplicationCommand, type APIGuild, type APITextChannel, type APIWebhook } from "@discordjs/core";
+import { Collection } from "@discordjs/collection";
 import type { Button, ContextMenuCommand, Command } from "./index.js";
 import { HttpException, HttpStatus } from "@nestjs/common";
 import { getUserID, type UserSession } from "#api/utils/discord";
@@ -20,6 +11,7 @@ import * as schemas from "#bot/database/index";
 import { Flags, spiritsData } from "#libs";
 import "./Extenders.js";
 import { loadButtons, loadCommands, loadContextCmd, loadEvents } from "#bot/utils/loaders";
+import { ResolvePermissions } from "#bot/utils/Permissions";
 export type ClassTypes = {
   UpdateTS: typeof UpdateTS;
   UpdateEvent: typeof UpdateEvent;
@@ -27,7 +19,7 @@ export type ClassTypes = {
 };
 
 /** The bot's client */
-export class SkyHelper extends Client<true> {
+export class SkyHelper extends Client {
   /** Configurations for the bot */
   public config = config;
 
@@ -39,6 +31,9 @@ export class SkyHelper extends Client<true> {
 
   /** Collection of Buttons */
   public buttons = new Collection<string, Button>();
+
+  /** Collection of guilds all the bot is in */
+  public guilds = new Collection<string, APIGuild>();
 
   /** Collection of command cooldowns */
   public cooldowns = new Collection<string, Collection<string, number>>();
@@ -81,43 +76,6 @@ export class SkyHelper extends Client<true> {
 
   /** All the Sky: SCOTL spirits data */
   public spiritsData = spiritsData;
-  constructor() {
-    super({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.DirectMessages,
-      ],
-      partials: [Partials.Channel, Partials.GuildMember, Partials.Message],
-      allowedMentions: {
-        repliedUser: false,
-      },
-      makeCache: Options.cacheWithLimits({
-        ...Options.DefaultMakeCacheSettings,
-        MessageManager: 0,
-        ReactionManager: 0,
-        ReactionUserManager: 0,
-        DMMessageManager: 0,
-        GuildForumThreadManager: 0,
-        GuildMessageManager: 0,
-        GuildTextThreadManager: 0,
-        GuildInviteManager: 0,
-      }),
-      sweepers: {
-        ...Options.DefaultSweeperSettings,
-        users: {
-          interval: 36_00, // an hour
-          filter: () => (user) => user.id !== user.client.user.id,
-        },
-        guildMembers: {
-          interval: 36_00, // an hour
-          filter: () => (member) => member.id !== member.client.user.id,
-        },
-      },
-    });
-  }
 
   /**
    * Loads all the modules
@@ -134,40 +92,32 @@ export class SkyHelper extends Client<true> {
   }
 
   /**
-   * Get bot's invite
-   */
-  public getInvite(): string {
-    return this.generateInvite({
-      scopes: ["bot", "application.commands"] as unknown as OAuth2Scopes[],
-      permissions: 412317243584n,
-    });
-  }
-
-  /**
    * @param channel Channel where webhook is to be created
    * @param reason The reason for webhooks creation
    */
-  public async createWebhook(channel: TextChannel, reason: string): Promise<Webhook> {
-    const webhook = await channel.createWebhook({
-      name: "SkyHelper",
-      avatar: this.user.displayAvatarURL(),
-      reason: reason ? reason : "SkyHelper Webhook",
-    });
-    return webhook;
+  public async createWebhook(channel: APITextChannel, reason: string = "SkyHelper Reminder"): Promise<APIWebhook> {
+    return this.api.channels.createWebhook(
+      channel.id,
+      {
+        name: "SkyHelper",
+        avatar: "https://skyhelper.xyz/assets/img/boticon.png",
+      },
+      { reason },
+    );
   }
 
   /**
    * get commands from client application
    * @param value - command name or id
    */
-  public async getCommand(value: string | number): Promise<ApplicationCommand> {
+  public async getCommand(value: string | number): Promise<APIApplicationCommand> {
     if (!value) throw new Error('Command "name" or "id" must be passed as an argument');
-    await this.application.commands.fetch();
+    const commands = await this.api.applicationCommands.getGlobalCommands(process.env.CLIENT_ID);
     const command =
       typeof value === "string" && isNaN(value as unknown as number)
-        ? this.application.commands.cache.find((cmd) => cmd.name === value.toLowerCase())
+        ? commands.find((cmd) => cmd.name === value.toLowerCase())
         : !isNaN(value as unknown as number)
-          ? this.application.commands.cache.get(value.toString())
+          ? commands.find((cmd) => cmd.id === value.toString())
           : (() => {
               throw new Error("Provided Value Must Either be a String or a Number");
             })();
@@ -181,13 +131,12 @@ export class SkyHelper extends Client<true> {
    * @param guildID
    */
   public async checkPermissions(user: UserSession, guildID: string) {
-    const guild = this.guilds.cache.get(guildID);
+    const guild = this.guilds.get(guildID);
     if (!guild) throw new HttpException("Guild Not found", HttpStatus.NOT_FOUND);
-
     const userID = await getUserID(user.access_token);
-    const member = await guild?.members.fetch(userID).catch(() => null);
-
-    if (!member?.permissions.has("ManageGuild") && guild.ownerId !== member?.id) {
+    const member = await this.api.guilds.getMember(guild.id, userID).catch(() => null);
+    const memberPerms = guild.roles.filter((role) => member?.roles.includes(role.id)).map((role) => role.permissions);
+    if (!ResolvePermissions(memberPerms).includes("ManageGuild") && guild.owner_id !== member?.user.id) {
       throw new HttpException("Missing permissions", HttpStatus.UNAUTHORIZED);
     }
   }
@@ -197,7 +146,7 @@ export class SkyHelper extends Client<true> {
    */
   public async checkAdmin(user: UserSession) {
     const userID = await getUserID(user.access_token);
-    const u = await this.users.fetch(userID);
+    const u = await this.api.users.get(userID);
 
     if (!config.DASHBOARD.ADMINS.includes(u.id)) {
       throw new HttpException("Missing access", HttpStatus.UNAUTHORIZED);
@@ -210,9 +159,9 @@ export class SkyHelper extends Client<true> {
    * @param sub Subcoomand if it's subcommand mention
    * @returns The command mentions
    */
-  public mentionCommand(command: ApplicationCommand, sub?: string) {
+  public mentionCommand(command: APIApplicationCommand, sub?: string) {
     if (sub) {
-      const option = command.options.find((o) => o.type === 1 && o.name === sub);
+      const option = command.options?.find((o) => o.type === 1 && o.name === sub);
       if (!option) throw new Error(`THe provided command doesn't have any subcommand option with the name ${sub}`);
     }
     return `</${command.name}${sub ? ` ${sub}` : ""}:${command.id}>`;

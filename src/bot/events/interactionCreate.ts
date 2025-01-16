@@ -19,6 +19,7 @@ import { dailyQuestEmbed } from "#utils";
 import { SkytimesUtils as skyutils } from "skyhelper-utils";
 import { validateInteractions } from "#bot/utils/validators";
 import moment from "moment-timezone";
+import type { GatewayDispatchEvents } from "@discordjs/core";
 
 const cLogger = process.env.COMMANDS_USED ? new WebhookClient({ url: process.env.COMMANDS_USED }) : undefined;
 const bLogger = process.env.BUG_REPORTS ? new WebhookClient({ url: process.env.BUG_REPORTS }) : undefined;
@@ -48,7 +49,10 @@ const formatIfUserApp = (int: CommandInteraction) => {
   );
 };
 
-const interactionHandler: Event<"interactionCreate"> = async (client, interaction): Promise<void> => {
+const interactionHandler: Event<GatewayDispatchEvents.InteractionCreate> = async (
+  client,
+  { data: interaction },
+): Promise<void> => {
   // Translator
   const t = await interaction.t();
   const scope = new Sentry.Scope();

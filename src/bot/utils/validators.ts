@@ -2,15 +2,12 @@ import logger from "#bot/handlers/logger";
 import type { Flags } from "#bot/libs/index";
 import type { Command } from "#bot/structures/Command";
 import type { ContextMenuCommand } from "#bot/structures/ContextMenuCommands";
-import type {
-  ChatInputCommandInteraction,
-  ContextMenuCommandInteraction,
-  Message,
-  MessageCreateOptions,
-  OmitPartialGroupDMChannel,
-} from "discord.js";
-import { Collection, resolveColor } from "discord.js";
+import type { SkyHelper } from "#bot/structures/SkyHelper";
+
+import { Collection } from "@discordjs/collection";
+import type { APIChatInputApplicationCommandInteraction, APIContextMenuInteraction } from "@discordjs/core";
 import { parsePerms, type Permission } from "skyhelper-utils";
+import { PermissionsUtil, ResolvePermissions } from "./Permissions.js";
 
 // #region Env
 export function validateEnv() {
@@ -35,13 +32,14 @@ export function validateEnv() {
  * @returns An object with status and message
  */
 export function validateInteractions(
+  client: SkyHelper,
   command: Command | ContextMenuCommand<"MessageContext" | "UserContext">,
-  interaction: ChatInputCommandInteraction | ContextMenuCommandInteraction,
+  interaction: APIChatInputApplicationCommandInteraction | APIContextMenuInteraction,
   t: ReturnType<typeof import("../i18n.js").getTranslator>,
 ) {
-  const client = interaction.client;
+  const userId = interaction.member?.user?.id || interaction.user!.id;
   // Handle owner commands
-  if (command.ownerOnly && !client.config.OWNER.includes(interaction.user.id)) {
+  if (command.ownerOnly && !client.config.OWNER.includes(userId)) {
     return {
       status: false,
       message: "This command is for owner(s) only.",
@@ -49,8 +47,8 @@ export function validateInteractions(
   }
   // Handle command user required permissions
   if (command.userPermissions) {
-    if (interaction.inGuild()) {
-      if (!interaction.memberPermissions.has(command.userPermissions)) {
+    if (interaction.member) {
+      if (!new PermissionsUtil(interaction.member.permissions).has(command.userPermissions)) {
         return {
           status: false,
           message: t("errors:NO_PERMS_USER", {

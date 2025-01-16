@@ -28,6 +28,10 @@
   "author": "Naiyar Imam",
   "license": "MIT",
   "dependencies": {
+    "@discordjs/collection": "^2.1.1",
+    "@discordjs/core": "^2.0.1",
+    "@discordjs/rest": "^2.4.2",
+    "@discordjs/ws": "^2.0.1",
     "@imnaiyar/framework": "^1.2.2",
     "@napi-rs/canvas": "^0.1.52",
     "@nestjs/common": "^10.3.8",
@@ -41,7 +45,6 @@
     "chalk": "^4.1.2",
     "cors": "^2.8.5",
     "cropify": "^1.0.9",
-    "discord.js": "14.16.2",
     "express": "^4.20.0",
     "i18next": "^23.11.5",
     "i18next-fs-backend": "^2.3.1",

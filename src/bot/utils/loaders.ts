@@ -1,9 +1,9 @@
-import { Collection, type LocalizationMap } from "discord.js";
+import { Collection } from "@discordjs/collection";
 import { recursiveReadDir } from "skyhelper-utils";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import logger, { CustomLogger } from "../handlers/logger.js";
-import type { SkyHelper, Button, ContextMenuCommand, Command } from "#structures";
+import type { SkyHelper, Button, ContextMenuCommand, Command, Event } from "#structures";
 import { table } from "table";
 
 // import i18next initialization file to ensure it's initialized before calling the below function
@@ -11,6 +11,7 @@ import "../i18n.js";
 import type { LangKeys } from "../i18n.js";
 import { t } from "i18next";
 import { supportedLang } from "../libs/constants/supportedLang.js";
+import type { LocalizationMap } from "@discordjs/core";
 const baseDir = process.env.NODE_ENV === "development" ? "src/" : "dist/";
 /**
  * Loads all the commands
@@ -119,11 +120,10 @@ export async function loadEvents(client: SkyHelper) {
   for (const filePath of files) {
     const file = path.basename(filePath);
     try {
-      const eventName = path.basename(file, process.env.NODE_ENV === "development" ? ".ts" : ".js");
-      const { default: event } = await import(pathToFileURL(filePath).href);
+      const { default: event } = (await import(pathToFileURL(filePath).href)) as { default: Event };
 
-      client.on(eventName, event.bind(null, client));
-      clientEvents.push([file, "✓"]);
+      client[event.once ? "once" : "on"](event.name, event.execute.bind(null, client));
+      clientEvents.push([event.name, "✓"]);
       success += 1;
     } catch (ex) {
       failed += 1;
